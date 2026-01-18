@@ -54,8 +54,9 @@ RUN apt-get update && \
     apt-get autoremove -y && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
-# 设置 Chrome 路径环境变量
-ENV CHROME_BIN=/usr/bin/google-chrome-stable
+# 设置 Chrome 路径环境变量（优先使用真实二进制路径，避免某些库无法识别 wrapper）
+ENV CHROME_BIN=/opt/google/chrome/google-chrome \
+    GOOGLE_CHROME_BIN=/opt/google/chrome/google-chrome
 
 # 复制后端代码
 COPY main.py .

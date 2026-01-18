@@ -6,6 +6,7 @@ import os
 import random
 import shutil
 import string
+import subprocess
 import time
 from datetime import datetime, timedelta
 from typing import Optional
@@ -84,18 +85,57 @@ class GeminiAutomationUC:
             options.add_argument(f"--user-agent={self.user_agent}")
 
         # 显式设置 Chrome 路径，避免 uc/selenium 传入非字符串导致报错
-        chrome_bin = os.getenv("CHROME_BIN") or os.getenv("GOOGLE_CHROME_BIN")
-        if not chrome_bin:
-            chrome_bin = (
-                shutil.which("google-chrome-stable")
-                or shutil.which("google-chrome")
-                or shutil.which("chromium")
-                or shutil.which("chromium-browser")
-            )
+        chrome_bin = None
+        chrome_candidates = []
+
+        env_chrome_bin = os.getenv("CHROME_BIN") or os.getenv("GOOGLE_CHROME_BIN")
+        if env_chrome_bin:
+            chrome_candidates.append(env_chrome_bin)
+
+        # Debian/Ubuntu 的 google-chrome-stable 通常真实可执行文件在 /opt 下
+        chrome_candidates.extend(
+            [
+                "/opt/google/chrome/google-chrome",
+                "/usr/bin/google-chrome-stable",
+                "/usr/bin/google-chrome",
+                "/usr/bin/chromium",
+                "/usr/bin/chromium-browser",
+            ]
+        )
+
+        chrome_candidates.extend(
+            [
+                shutil.which("google-chrome-stable"),
+                shutil.which("google-chrome"),
+                shutil.which("chromium"),
+                shutil.which("chromium-browser"),
+            ]
+        )
+
+        for candidate in chrome_candidates:
+            if not candidate:
+                continue
+            candidate = str(candidate)
+            if os.path.exists(candidate) and os.access(candidate, os.X_OK):
+                chrome_bin = candidate
+                break
+
         if chrome_bin:
-            chrome_bin = str(chrome_bin)
             options.binary_location = chrome_bin
             self._log("info", f"using chrome binary: {chrome_bin}")
+            try:
+                r = subprocess.run(
+                    [chrome_bin, "--version"],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+                if r.returncode == 0:
+                    self._log("info", f"chrome version: {(r.stdout or r.stderr).strip()}")
+                else:
+                    self._log("warning", f"chrome --version failed: rc={r.returncode} err={(r.stderr or '').strip()}")
+            except Exception as exc:
+                self._log("warning", f"chrome --version check error: {type(exc).__name__}: {exc}")
         else:
             self._log("warning", "chrome binary not found; relying on auto-detection")
 
@@ -109,8 +149,9 @@ class GeminiAutomationUC:
                 use_subprocess=True,
                 browser_executable_path=chrome_bin,
             )
-        except TypeError:
+        except TypeError as exc:
             # 兼容旧版 uc：不支持 browser_executable_path 参数
+            self._log("warning", f"uc.Chrome does not accept browser_executable_path: {exc}")
             self.driver = uc.Chrome(
                 options=options,
                 version_main=None,  # 自动检测 Chrome 版本
