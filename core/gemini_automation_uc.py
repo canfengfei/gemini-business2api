@@ -338,38 +338,172 @@ class GeminiAutomationUC:
 
     def _click_send_code_button(self) -> bool:
         """点击发送验证码按钮（如果需要）"""
-        time.sleep(2)
+        def _normalize(text: str) -> str:
+            return " ".join((text or "").split()).strip()
 
-        # 方法1: 直接通过ID查找
-        try:
-            direct_btn = WebDriverWait(self.driver, 5).until(
-                EC.element_to_be_clickable((By.ID, "sign-in-with-email"))
-            )
-            self.driver.execute_script("arguments[0].click();", direct_btn)
-            time.sleep(2)
-            return True
-        except TimeoutException:
-            pass
+        def _element_text(el) -> str:
+            parts = []
+            try:
+                if el.text:
+                    parts.append(el.text)
+            except Exception:
+                pass
 
-        # 方法2: 通过关键词查找按钮
-        keywords = ["通过电子邮件发送验证码", "通过电子邮件发送", "email", "Email", "Send code", "Send verification", "Verification code"]
-        try:
-            buttons = self.driver.find_elements(By.TAG_NAME, "button")
-            for btn in buttons:
-                text = btn.text.strip() if btn.text else ""
-                if text and any(kw in text for kw in keywords):
-                    self.driver.execute_script("arguments[0].click();", btn)
-                    time.sleep(2)
+            for attr in ("aria-label", "title", "value"):
+                try:
+                    v = el.get_attribute(attr)
+                    if v:
+                        parts.append(v)
+                except Exception:
+                    pass
+
+            try:
+                inner = self.driver.execute_script("return arguments[0].innerText || '';", el)
+                if inner:
+                    parts.append(inner)
+            except Exception:
+                pass
+
+            return _normalize(" ".join(parts))
+
+        def _find_code_input():
+            selectors = [
+                "input[name='pinInput']",
+                "input[autocomplete='one-time-code']",
+                "input[inputmode='numeric']",
+                "input[type='tel']",
+                "input[type='number']",
+            ]
+            for sel in selectors:
+                try:
+                    el = self.driver.find_element(By.CSS_SELECTOR, sel)
+                    if el:
+                        return el
+                except NoSuchElementException:
+                    continue
+                except Exception:
+                    continue
+            return None
+
+        def _has_captcha() -> bool:
+            try:
+                if self.driver.find_elements(
+                    By.CSS_SELECTOR,
+                    "iframe[src*='recaptcha'], iframe[title*='reCAPTCHA'], div.g-recaptcha",
+                ):
                     return True
-        except Exception:
-            pass
+            except Exception:
+                pass
+            return False
 
-        # 方法3: 检查是否已经在验证码输入页面
-        try:
-            code_input = self.driver.find_element(By.CSS_SELECTOR, "input[name='pinInput']")
-            if code_input:
+        time.sleep(1)
+
+        # 有些情况下 “继续” 已经触发发码，页面会直接出现输入框
+        if _find_code_input() is not None:
+            return True
+
+        # Zeabur 上页面渲染/风控检查更慢：多等一会儿再判断 “按钮不存在”
+        start = time.time()
+        timeout_s = 25
+
+        keywords = [
+            # 中文
+            "通过电子邮件发送验证码",
+            "通过电子邮件发送",
+            "发送验证码",
+            "发送验证",
+            "发送代码",
+            "获取验证码",
+            "获取代码",
+            # 英文
+            "email",
+            "send code",
+            "send verification",
+            "verification code",
+            "one-time",
+            "otp",
+        ]
+        keywords_lower = [k.lower() for k in keywords]
+
+        while time.time() - start < timeout_s:
+            if _has_captcha():
+                self._log("warning", "captcha detected on login page; cannot click send-code button")
+                return False
+
+            if _find_code_input() is not None:
                 return True
-        except NoSuchElementException:
+
+            # 方法1: 历史 ID（旧版页面）
+            try:
+                direct_btn = WebDriverWait(self.driver, 2).until(
+                    EC.element_to_be_clickable((By.ID, "sign-in-with-email"))
+                )
+                self.driver.execute_script("arguments[0].click();", direct_btn)
+                time.sleep(1)
+                return True
+            except TimeoutException:
+                pass
+            except Exception:
+                pass
+
+            # 方法2: 扫描可点击元素（不一定是 <button>）
+            candidates = []
+            try:
+                candidates.extend(self.driver.find_elements(By.TAG_NAME, "button"))
+            except Exception:
+                pass
+            try:
+                candidates.extend(self.driver.find_elements(By.CSS_SELECTOR, "[role='button']"))
+            except Exception:
+                pass
+
+            for el in candidates:
+                try:
+                    text = _element_text(el)
+                    if not text:
+                        continue
+                    t = text.lower()
+                    if any(k in t for k in keywords_lower):
+                        try:
+                            self.driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
+                        except Exception:
+                            pass
+                        self.driver.execute_script("arguments[0].click();", el)
+                        time.sleep(1)
+                        return True
+                except Exception:
+                    continue
+
+            time.sleep(0.5)
+
+        # 失败时打印候选按钮文本，方便远程排查 selector
+        try:
+            samples = []
+            pool = []
+            try:
+                pool.extend(self.driver.find_elements(By.TAG_NAME, "button"))
+            except Exception:
+                pass
+            try:
+                pool.extend(self.driver.find_elements(By.CSS_SELECTOR, "[role='button']"))
+            except Exception:
+                pass
+
+            for el in pool[:30]:
+                try:
+                    txt = _element_text(el)
+                    if not txt:
+                        continue
+                    try:
+                        tag = el.tag_name or ""
+                    except Exception:
+                        tag = ""
+                    samples.append(f"{tag}:{txt[:80]}")
+                except Exception:
+                    continue
+            if samples:
+                self._log("info", "candidate buttons: " + " | ".join(samples))
+        except Exception:
             pass
 
         return False
@@ -377,10 +511,26 @@ class GeminiAutomationUC:
     def _wait_for_code_input(self, timeout: int = 30):
         """等待验证码输入框出现"""
         try:
-            element = WebDriverWait(self.driver, timeout).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, "input[name='pinInput']"))
-            )
-            return element
+            selectors = [
+                "input[name='pinInput']",
+                "input[autocomplete='one-time-code']",
+                "input[inputmode='numeric']",
+                "input[type='tel']",
+                "input[type='number']",
+            ]
+            end = time.time() + timeout
+            while time.time() < end:
+                for sel in selectors:
+                    try:
+                        el = self.driver.find_element(By.CSS_SELECTOR, sel)
+                        if el:
+                            return el
+                    except NoSuchElementException:
+                        continue
+                    except Exception:
+                        continue
+                time.sleep(0.3)
+            return None
         except TimeoutException:
             return None
 
@@ -538,6 +688,7 @@ class GeminiAutomationUC:
             os.makedirs(screenshot_dir, exist_ok=True)
             path = os.path.join(screenshot_dir, f"{name}_{int(time.time())}.png")
             self.driver.save_screenshot(path)
+            self._log("info", f"screenshot saved: {path}")
         except Exception:
             pass
 
