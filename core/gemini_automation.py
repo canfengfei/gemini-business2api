@@ -1,7 +1,9 @@
 """
 Gemini自动化登录模块（用于新账号注册）
 """
+import os
 import random
+import shutil
 import string
 import time
 from datetime import datetime, timedelta
@@ -61,6 +63,21 @@ class GeminiAutomation:
         options.set_argument("--disable-blink-features=AutomationControlled")
         options.set_argument("--window-size=1280,800")
         options.set_user_agent(self.user_agent)
+
+        # 显式设置浏览器路径，避免容器里无法自动识别
+        chrome_bin = os.getenv("CHROME_BIN") or os.getenv("GOOGLE_CHROME_BIN")
+        if not chrome_bin:
+            chrome_bin = (
+                shutil.which("google-chrome-stable")
+                or shutil.which("google-chrome")
+                or shutil.which("chromium")
+                or shutil.which("chromium-browser")
+            )
+        if chrome_bin and hasattr(options, "set_browser_path"):
+            try:
+                options.set_browser_path(str(chrome_bin))
+            except Exception:
+                pass
 
         if self.proxy:
             options.set_argument(f"--proxy-server={self.proxy}")
