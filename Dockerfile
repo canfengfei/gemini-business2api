@@ -47,19 +47,18 @@ RUN apt-get update && \
     echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] https://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list && \
     apt-get update && \
     apt-get install -y --no-install-recommends google-chrome-stable && \
-    # 防止被 autoremove 误删
+    # 防止被 autoremove 误删（以及构建期快速校验浏览器是否真的安装成功）
     apt-mark manual google-chrome-stable && \
+    google-chrome-stable --version && \
     # 安装 Python 依赖
     pip install --no-cache-dir -r requirements.txt && \
     # 清理
     apt-get purge -y gcc wget gnupg && \
-    apt-get autoremove -y --purge && \
-    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* && \
-    /opt/google/chrome/google-chrome --version
+    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # 设置 Chrome 路径环境变量（优先使用真实二进制路径，避免某些库无法识别 wrapper）
-ENV CHROME_BIN=/opt/google/chrome/google-chrome \
-    GOOGLE_CHROME_BIN=/opt/google/chrome/google-chrome
+ENV CHROME_BIN=/usr/bin/google-chrome-stable \
+    GOOGLE_CHROME_BIN=/usr/bin/google-chrome-stable
 
 # 复制后端代码
 COPY main.py .
