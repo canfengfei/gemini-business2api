@@ -93,14 +93,29 @@ class GeminiAutomationUC:
                 or shutil.which("chromium-browser")
             )
         if chrome_bin:
-            options.binary_location = str(chrome_bin)
+            chrome_bin = str(chrome_bin)
+            options.binary_location = chrome_bin
+            self._log("info", f"using chrome binary: {chrome_bin}")
+        else:
+            self._log("warning", "chrome binary not found; relying on auto-detection")
 
         # 创建驱动（undetected-chromedriver 会自动处理反检测）
-        self.driver = uc.Chrome(
-            options=options,
-            version_main=None,  # 自动检测 Chrome 版本
-            use_subprocess=True,
-        )
+        try:
+            # 某些 uc 版本需要显式传 browser_executable_path，否则会报
+            # "Could not determine browser executable."
+            self.driver = uc.Chrome(
+                options=options,
+                version_main=None,  # 自动检测 Chrome 版本
+                use_subprocess=True,
+                browser_executable_path=chrome_bin,
+            )
+        except TypeError:
+            # 兼容旧版 uc：不支持 browser_executable_path 参数
+            self.driver = uc.Chrome(
+                options=options,
+                version_main=None,  # 自动检测 Chrome 版本
+                use_subprocess=True,
+            )
 
         # 设置超时
         self.driver.set_page_load_timeout(self.timeout)
