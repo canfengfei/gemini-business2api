@@ -17,14 +17,45 @@ WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
-# 安装 Python 依赖（合并为单一 RUN 指令以减少层数）
+# 安装 Chrome 浏览器和 Python 依赖
 COPY requirements.txt .
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends gcc && \
+    apt-get install -y --no-install-recommends \
+        gcc \
+        wget \
+        gnupg \
+        ca-certificates \
+        fonts-liberation \
+        libasound2 \
+        libatk-bridge2.0-0 \
+        libatk1.0-0 \
+        libcups2 \
+        libdbus-1-3 \
+        libdrm2 \
+        libgbm1 \
+        libgtk-3-0 \
+        libnspr4 \
+        libnss3 \
+        libxcomposite1 \
+        libxdamage1 \
+        libxfixes3 \
+        libxkbcommon0 \
+        libxrandr2 \
+        xdg-utils && \
+    # 添加 Google Chrome 官方源
+    wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/google-chrome.gpg && \
+    echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends google-chrome-stable && \
+    # 安装 Python 依赖
     pip install --no-cache-dir -r requirements.txt && \
-    apt-get purge -y gcc && \
+    # 清理
+    apt-get purge -y gcc wget gnupg && \
     apt-get autoremove -y && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+# 设置 Chrome 路径环境变量
+ENV CHROME_BIN=/usr/bin/google-chrome-stable
 
 # 复制后端代码
 COPY main.py .
