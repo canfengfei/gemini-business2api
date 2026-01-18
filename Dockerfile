@@ -44,15 +44,18 @@ RUN apt-get update && \
         xdg-utils && \
     # 添加 Google Chrome 官方源
     wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/google-chrome.gpg && \
-    echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list && \
+    echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] https://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list && \
     apt-get update && \
     apt-get install -y --no-install-recommends google-chrome-stable && \
+    # 防止被 autoremove 误删
+    apt-mark manual google-chrome-stable && \
     # 安装 Python 依赖
     pip install --no-cache-dir -r requirements.txt && \
     # 清理
     apt-get purge -y gcc wget gnupg && \
-    apt-get autoremove -y && \
-    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+    apt-get autoremove -y --purge && \
+    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* && \
+    /opt/google/chrome/google-chrome --version
 
 # 设置 Chrome 路径环境变量（优先使用真实二进制路径，避免某些库无法识别 wrapper）
 ENV CHROME_BIN=/opt/google/chrome/google-chrome \
