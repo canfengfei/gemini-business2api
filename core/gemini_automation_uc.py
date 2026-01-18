@@ -58,31 +58,38 @@ class GeminiAutomationUC:
     def _create_driver(self):
         """创建浏览器驱动"""
         import tempfile
-        options = uc.ChromeOptions()
 
         # 创建临时用户数据目录
         self.user_data_dir = tempfile.mkdtemp(prefix='uc-profile-')
-        options.add_argument(f"--user-data-dir={self.user_data_dir}")
+        user_data_dir = self.user_data_dir
 
-        # 基础参数
-        options.add_argument("--incognito")
-        options.add_argument("--no-sandbox")
-        options.add_argument("--disable-setuid-sandbox")
-        options.add_argument("--window-size=1280,800")
+        def build_options() -> "uc.ChromeOptions":
+            opts = uc.ChromeOptions()
+            opts.add_argument(f"--user-data-dir={user_data_dir}")
 
-        # 代理设置
-        if self.proxy:
-            options.add_argument(f"--proxy-server={self.proxy}")
+            # 基础参数
+            opts.add_argument("--incognito")
+            opts.add_argument("--no-sandbox")
+            opts.add_argument("--disable-setuid-sandbox")
+            opts.add_argument("--window-size=1280,800")
 
-        # 无头模式
-        if self.headless:
-            options.add_argument("--headless=new")
-            options.add_argument("--disable-gpu")
-            options.add_argument("--disable-dev-shm-usage")
+            # 代理设置
+            if self.proxy:
+                opts.add_argument(f"--proxy-server={self.proxy}")
 
-        # User-Agent
-        if self.user_agent:
-            options.add_argument(f"--user-agent={self.user_agent}")
+            # 无头模式
+            if self.headless:
+                opts.add_argument("--headless=new")
+                opts.add_argument("--disable-gpu")
+                opts.add_argument("--disable-dev-shm-usage")
+
+            # User-Agent
+            if self.user_agent:
+                opts.add_argument(f"--user-agent={self.user_agent}")
+
+            return opts
+
+        options = build_options()
 
         # 显式设置 Chrome 路径，避免 uc/selenium 传入非字符串导致报错
         chrome_bin = None
@@ -93,13 +100,16 @@ class GeminiAutomationUC:
             chrome_candidates.append(env_chrome_bin)
 
         # Debian/Ubuntu 的 google-chrome-stable 通常真实可执行文件在 /opt 下
+        fixed_candidates = [
+            "/opt/google/chrome/google-chrome",
+            "/usr/bin/google-chrome-stable",
+            "/usr/bin/google-chrome",
+            "/usr/bin/chromium",
+            "/usr/bin/chromium-browser",
+        ]
         chrome_candidates.extend(
             [
-                "/opt/google/chrome/google-chrome",
-                "/usr/bin/google-chrome-stable",
-                "/usr/bin/google-chrome",
-                "/usr/bin/chromium",
-                "/usr/bin/chromium-browser",
+                *fixed_candidates,
             ]
         )
 
@@ -138,23 +148,46 @@ class GeminiAutomationUC:
                 self._log("warning", f"chrome --version check error: {type(exc).__name__}: {exc}")
         else:
             self._log("warning", "chrome binary not found; relying on auto-detection")
+            self._log("warning", f"env CHROME_BIN={os.getenv('CHROME_BIN')!r} GOOGLE_CHROME_BIN={os.getenv('GOOGLE_CHROME_BIN')!r}")
+            self._log(
+                "warning",
+                "which google-chrome-stable/google-chrome/chromium/chromium-browser="
+                f"{shutil.which('google-chrome-stable')!r}/"
+                f"{shutil.which('google-chrome')!r}/"
+                f"{shutil.which('chromium')!r}/"
+                f"{shutil.which('chromium-browser')!r}",
+            )
+            for p in fixed_candidates:
+                try:
+                    self._log("warning", f"chrome probe: {p} exists={os.path.exists(p)} x_ok={os.access(p, os.X_OK)}")
+                except Exception:
+                    self._log("warning", f"chrome probe: {p} check failed")
 
         # 创建驱动（undetected-chromedriver 会自动处理反检测）
         try:
             # 某些 uc 版本需要显式传 browser_executable_path，否则会报
             # "Could not determine browser executable."
-            self.driver = uc.Chrome(
+            kwargs = dict(
                 options=options,
                 version_main=None,  # 自动检测 Chrome 版本
                 use_subprocess=True,
-                browser_executable_path=chrome_bin,
             )
+            if chrome_bin:
+                kwargs["browser_executable_path"] = chrome_bin
+            self.driver = uc.Chrome(**kwargs)
         except TypeError as exc:
-            # 兼容旧版 uc：不支持 browser_executable_path 参数
-            self._log("warning", f"uc.Chrome does not accept browser_executable_path: {exc}")
+            # 兼容旧版 uc：不支持 browser_executable_path 参数（或 selenium 参数差异）
+            self._log("warning", f"uc.Chrome TypeError, retry without extra args: {exc}")
+            # selenium 会报 “you cannot reuse the ChromeOptions object”，这里必须重建 options
+            options = build_options()
+            if chrome_bin:
+                try:
+                    options.binary_location = chrome_bin
+                except Exception:
+                    pass
             self.driver = uc.Chrome(
                 options=options,
-                version_main=None,  # 自动检测 Chrome 版本
+                version_main=None,
                 use_subprocess=True,
             )
 
