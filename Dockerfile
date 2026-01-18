@@ -53,12 +53,7 @@ RUN apt-get update && \
     # 安装 Python 依赖
     pip install --no-cache-dir -r requirements.txt && \
     # 清理
-    apt-get purge -y gcc wget gnupg && \
-    # 某些构建环境会在 purge 阶段把 google-chrome-stable 也一并移除；这里强制再安装一次，确保最终镜像包含浏览器
-    apt-get update && \
-    apt-get install -y --no-install-recommends google-chrome-stable && \
-    apt-mark manual google-chrome-stable && \
-    google-chrome-stable --version && \
+    apt-get -o APT::Get::AutomaticRemove=false purge -y gcc wget gnupg && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # 设置 Chrome 路径环境变量（优先使用真实二进制路径，避免某些库无法识别 wrapper）
